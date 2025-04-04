@@ -1,7 +1,7 @@
 /**
  * MIT License
  *
- * Copyright (C) 2023-2024 Carsten Janssen
+ * Copyright (C) 2023-2025 Carsten Janssen
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -40,7 +40,7 @@
 
 
 /* strtol() with error checks */
-long xstrtol(const char *str, int base)
+static long xstrtol(const char *str, int base)
 {
     char *endptr = NULL;
 
@@ -67,7 +67,7 @@ long xstrtol(const char *str, int base)
 }
 
 /* string to unsigned char */
-uint8_t strtouchar(const char *str, int base)
+static uint8_t strtouchar(const char *str, int base)
 {
     long l = xstrtol(str, base);
 
@@ -80,7 +80,7 @@ uint8_t strtouchar(const char *str, int base)
 }
 
 /* xstrtol() wrapper */
-long get_long(const char *str)
+static long get_long(const char *str)
 {
     const size_t len = strlen(str);
 
@@ -105,7 +105,7 @@ long get_long(const char *str)
 }
 
 /* read data and print as hex digits on screen */
-void read_data(const char *arg_offset, const char *arg_length, const char *file)
+static void read_data(const char *arg_offset, const char *arg_length, const char *file)
 {
     long offset, len;
 
@@ -180,7 +180,7 @@ void read_data(const char *arg_offset, const char *arg_length, const char *file)
 }
 
 /* write data to file */
-void write_to_file(const char *file, uint8_t *data, uint8_t *byte, const char *arg_offset, long num_bytes)
+static void write_to_file(const char *file, uint8_t *data, uint8_t *byte, const char *arg_offset, long num_bytes)
 {
     int sk;
 
@@ -229,7 +229,7 @@ void write_to_file(const char *file, uint8_t *data, uint8_t *byte, const char *a
 }
 
 /* write arg_data at arg_offset to file */
-void write_data(const char *arg_offset, const char *arg_data, const char *file)
+static void write_data(const char *arg_offset, const char *arg_data, const char *file)
 {
     if (*arg_data == 0) {
         fprintf(stderr, "error: empty argument\n");
@@ -290,7 +290,7 @@ void write_data(const char *arg_offset, const char *arg_data, const char *file)
 }
 
 /* create a data set of arg_length and write it to file */
-void memset_write_data(const char *arg_offset, const char *arg_length, const char *arg_char, const char *file)
+static void memset_write_data(const char *arg_offset, const char *arg_length, const char *arg_char, const char *file)
 {
     long len = get_long(arg_length);
     long chrlen = strlen(arg_char);
@@ -341,17 +341,16 @@ void memset_write_data(const char *arg_offset, const char *arg_length, const cha
     write_to_file(file, NULL, &c, arg_offset, len);
 }
 
-void print_usage(const char *self)
+static void print_usage(const char *self)
 {
     printf("usage:\n"
            "  %s --help\n", self);
-    //printf("  %s r[ead] <file>\n", self);
     printf("  %s r[ead] [<offset> <length>] <file>\n", self);
     printf("  %s w[rite] <offset> <data> <file>\n", self);
     printf("  %s m[emset] <offset> <length> <char> <file>\n", self);
 }
 
-void show_help(const char *self)
+static void show_help(const char *self)
 {
     print_usage(self);
 
@@ -372,7 +371,7 @@ void show_help(const char *self)
            "\n");
 }
 
-int is_cmd(const char *arg, const char *cmd)
+static int is_cmd(const char *arg, const char *cmd)
 {
     return ((tolower(*arg) == tolower(*cmd) && arg[1] == 0) ||
         strcasecmp(arg, cmd) == 0);

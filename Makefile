@@ -1,8 +1,8 @@
 CFLAGS ?= -Wall -Wextra -O3
 LDFLAGS ?= -s
 
-BIN := hexedit
-OBJS = hexedit.o
+BIN := simple-hexedit
+OBJS = simple-hexedit.o
 
 
 all: $(BIN)
