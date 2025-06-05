@@ -23,20 +23,27 @@
  */
 
 #ifdef _MSC_VER
-#define _CRT_SECURE_NO_WARNINGS
-#define _CRT_NONSTDC_NO_WARNINGS
-#include <io.h>
-#define strcasecmp _stricmp
+# define _CRT_SECURE_NO_WARNINGS
+# define _CRT_NONSTDC_NO_WARNINGS
+# include <io.h>
+# define strcasecmp _stricmp
 #else
-#include <unistd.h>
+# include <unistd.h>
 #endif
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+# define PATH_SEPARATOR '\\'
+#else
+# define PATH_SEPARATOR '/'
+#endif
 
 
 /* strtol() with error checks */
@@ -53,20 +60,15 @@ static long xstrtol(const char *str, int base)
     }
 
     if (*endptr != 0) {
-        fprintf(stderr, "error: argument with invalid characters: ");
-
-        if (isprint(*endptr)) {
-            fprintf(stderr, "`%c'\n", *endptr);
-        } else {
-            fprintf(stderr, "%x\n", *endptr);
-        }
+        fprintf(stderr, "error: argument cannot be interpreted as number: %s\n", str);
         exit(1);
     }
 
     return l;
 }
 
-/* string to unsigned char */
+
+/* convert string to unsigned char */
 static uint8_t strtouchar(const char *str, int base)
 {
     long l = xstrtol(str, base);
@@ -79,14 +81,20 @@ static uint8_t strtouchar(const char *str, int base)
     return (uint8_t)l;
 }
 
-/* xstrtol() wrapper */
+
+/* check if str begins with \x or 0x */
+static bool hex_prefix(const char *str)
+{
+    return ((str[0] == '0' || str[0] == '\\') &&
+            (str[1] == 'x' || str[1] == 'X') &&
+             str[2] != 0);
+}
+
+
+/* convert string to long (xstrtol() wrapper) */
 static long get_long(const char *str)
 {
-    const size_t len = strlen(str);
-
-    if (len > 2 && (*str == '0' || *str == '\\') &&
-        (str[1] == 'x' || str[1] == 'X'))
-    {
+    if (hex_prefix(str)) {
         /* hexadecimal number */
         char *copy = strdup(str);
         copy[0] = '0'; /* turn "\x" prefix into "0x" */
@@ -95,7 +103,7 @@ static long get_long(const char *str)
         free(copy);
 
         return l;
-    } else if (len > 1 && str[0] == '0') {
+    } else if (str[0] == '0' && str[1] != 0) {
         /* octal number */
         return xstrtol(str, 8);
     }
@@ -103,6 +111,7 @@ static long get_long(const char *str)
     /* decimal number */
     return xstrtol(str, 10);
 }
+
 
 /* read data and print as hex digits on screen */
 static void read_data(const char *arg_offset, const char *arg_length, const char *file)
@@ -120,14 +129,10 @@ static void read_data(const char *arg_offset, const char *arg_length, const char
     fseek(fp, 0, SEEK_END);
     long fsize = ftell(fp);
 
-    if (strcasecmp(arg_offset, "append") == 0) {
-        offset = fsize;
-    } else {
-        offset = get_long(arg_offset);
-    }
-
     /* check offset and filesize */
-    if (offset >= fsize) {
+    if (strcasecmp(arg_offset, "append") == 0 ||
+        (offset = get_long(arg_offset)) >= fsize)
+    {
         fprintf(stderr, "error: offset equals or exceeds filesize\n");
         fclose(fp);
         exit(1);
@@ -141,13 +146,9 @@ static void read_data(const char *arg_offset, const char *arg_length, const char
     }
 
     /* get length to read */
-    if (strcasecmp(arg_length, "all") == 0) {
-        len = 0;
-    } else {
-        len = get_long(arg_length);
-    }
-
-    if (len < 1) {
+    if (strcasecmp(arg_length, "all") == 0 ||
+        (len = get_long(arg_length)) < 1)
+    {
         fseek(fp, 0, SEEK_END);
         len = ftell(fp) - offset;
         fseek(fp, offset, SEEK_SET);
@@ -165,8 +166,10 @@ static void read_data(const char *arg_offset, const char *arg_length, const char
         int j = i + 1;
 
         if (i > 0 && j%4 == 0 && j%16 != 0) {
+            /* print trailing space */
             printf(" %02X ", (uint8_t)c);
         } else {
+            /* no trailing space */
             printf(" %02X", (uint8_t)c);
         }
 
@@ -179,14 +182,12 @@ static void read_data(const char *arg_offset, const char *arg_length, const char
     fclose(fp);
 }
 
+
 /* write data to file */
-static void write_to_file(const char *file, uint8_t *data, uint8_t *byte, const char *arg_offset, long num_bytes)
+static void write_to_file(const char *file, const uint8_t *data, const uint8_t *byte, const char *arg_offset, long num_bytes)
 {
     int sk;
-
-    if (!data && !byte) {
-        abort();
-    }
+    long written = 0;
 
     /* open or create file */
     int fd = open(file, O_RDWR | O_CREAT, 0664);
@@ -211,14 +212,17 @@ static void write_to_file(const char *file, uint8_t *data, uint8_t *byte, const 
 
     /* write data */
     if (byte) {
-        for (long i = 0; i < num_bytes; i++) {
+        /* "memset" */
+        for ( ; written < num_bytes; written++) {
             if (write(fd, byte, 1) != 1) {
-                perror("write()");
-                close(fd);
-                exit(1);
+                break;
             }
         }
-    } else if (write(fd, data, num_bytes) != num_bytes) {
+    } else {
+        written = write(fd, data, num_bytes);
+    }
+
+    if (written != num_bytes) {
         perror("write()");
         close(fd);
         exit(1);
@@ -228,14 +232,10 @@ static void write_to_file(const char *file, uint8_t *data, uint8_t *byte, const 
     close(fd);
 }
 
-/* write arg_data at arg_offset to file */
-static void write_data(const char *arg_offset, const char *arg_data, const char *file)
-{
-    if (*arg_data == 0) {
-        fprintf(stderr, "error: empty argument\n");
-        exit(1);
-    }
 
+/* convert hex string to uchar array */
+static uint8_t *hex_to_uchar(const char *arg_data, size_t *num_bytes)
+{
     uint8_t *data = malloc((strlen(arg_data) / 2) + 2);
 
     if (!data) {
@@ -244,8 +244,8 @@ static void write_data(const char *arg_offset, const char *arg_data, const char 
     }
 
     uint8_t *pdata = data;
-    size_t num_bytes = 0;
     char buf[5] = { '0','x', 0, 0, 0 };
+    *num_bytes = 0;
 
     /* convert hex string to bytes */
     for (const char *p = arg_data; *p != 0; p++) {
@@ -254,14 +254,13 @@ static void write_data(const char *arg_offset, const char *arg_data, const char 
             continue;
         }
 
-        /* error if *p is not a hex digit */
+        /* error if character is not a hex digit */
         if (!isxdigit(*p)) {
             if (isprint(*p)) {
-                fprintf(stderr, "error: `%c' ", *p);
+                fprintf(stderr, "error: character `%c' is not a hexadecimal digit\n", *p);
             } else {
-                fprintf(stderr, "error: %x ", *p);
+                fprintf(stderr, "error: character `0x%02X' is not a hexadecimal digit\n", (uint8_t)*p);
             }
-            fprintf(stderr, "is not a hexadecimal digit\n");
             free(data);
             exit(1);
         }
@@ -269,86 +268,122 @@ static void write_data(const char *arg_offset, const char *arg_data, const char 
         if (buf[2] == 0) {
             /* save char */
             buf[2] = *p;
-        } else if (buf[3] == 0) {
-            /* save char, convert to byte, reset buffer */
-            buf[3] = *p;
-            *pdata++ = strtouchar(buf, 16);
-            buf[2] = buf[3] = 0;
-            num_bytes++;
+            continue;
+        }
+
+        if (buf[3] == 0) {
+            buf[3] = *p; /* save char */
+            *pdata = strtouchar(buf, 16); /* convert to byte */
+            buf[2] = buf[3] = 0; /* reset buffer */
+            *num_bytes += 1;
+            pdata++;
         }
     }
 
     /* trailing single-digit hex number */
     if (buf[2] != 0) {
         *pdata = strtouchar(buf, 16);
-        num_bytes++;
+        *num_bytes += 1;
     }
 
-    /* save data */
-    write_to_file(file, data, NULL, arg_offset, num_bytes);
-    free(data);
+    return data;
 }
 
-/* create a data set of arg_length and write it to file */
-static void memset_write_data(const char *arg_offset, const char *arg_length, const char *arg_char, const char *file)
-{
-    long len = get_long(arg_length);
-    long chrlen = strlen(arg_char);
-    uint8_t c = 0;
 
-    if (len < 1) {
-        fprintf(stderr, "error: length must be 1 or more: %s\n", arg_length);
-        exit(1);
+/* get single character from argument (can be an escape sequence) */
+static uint8_t get_uchar(const char *arg_char)
+{
+    const long len = strlen(arg_char);
+
+    if (len == 1) {
+        /* literal character */
+        return (uint8_t)arg_char[0];
     }
 
-    if (chrlen == 1) {
-        /* literal character */
-        c = (uint8_t)arg_char[0];
-    } else if (chrlen > 2 && (*arg_char == '0' || *arg_char == '\\') &&
-                (arg_char[1] == 'x' || arg_char[1] == 'X'))
-    {
+    if (hex_prefix(arg_char)) {
         /* hex number (0x.. or \x..) */
         char *copy = strdup(arg_char);
-        copy[0] = '0';
-        c = strtouchar(copy, 16);
+        copy[0] = '0';  /* turn "\x" prefix into "0x" */
+        uint8_t c = strtouchar(copy, 16);
         free(copy);
-    } else if (arg_char[0] == '\\') {
-        /* control character */
-        if (chrlen == 2) {
+        return c;
+    }
+
+    if (arg_char[0] == '\\' && arg_char[1] != 0) {
+        if (len == 2) {
+            /* control character */
             switch(arg_char[1]) {
-                case 'n': c = '\n'; break;
-                case 't': c = '\t'; break;
-                case 'r': c = '\r'; break;
-                case 'a': c = '\a'; break;
-                case 'b': c = '\b'; break;
-                case 'f': c = '\f'; break;
-                case 'v': c = '\v'; break;
-                case 'e': c = 0x1B; break;
+                case 'n': return '\n';
+                case 't': return '\t';
+                case 'r': return '\r';
+                case 'a': return '\a';
+                case 'b': return '\b';
+                case 'f': return '\f';
+                case 'v': return '\v';
+                case 'e': return 0x1B;
                 default:
                     break;
             }
         }
 
         /* escaped decimal number */
-        if (c == 0) {
-            c = strtouchar(arg_char + 1, 10);
-        }
-    } else {
-        fprintf(stderr, "error: invalid argument: %s\n", arg_char);
+        return strtouchar(arg_char + 1, 10);
+    }
+
+    fprintf(stderr, "error: invalid argument: %s\n", arg_char);
+    exit(1);
+}
+
+
+/* write arg_data at arg_offset to file */
+static void write_data(const char *arg_offset, const char *arg_data, const char *file)
+{
+    if (*arg_data == 0) {
+        fprintf(stderr, "error: empty argument\n");
         exit(1);
     }
+
+    size_t num_bytes;
+    uint8_t *data = hex_to_uchar(arg_data, &num_bytes);
+
+    write_to_file(file, data, NULL, arg_offset, num_bytes);
+
+    free(data);
+}
+
+
+/* create a data set of arg_length and write it to file */
+static void memset_write_data(const char *arg_offset, const char *arg_length, const char *arg_char, const char *file)
+{
+    const long len = get_long(arg_length);
+
+    if (len < 1) {
+        fprintf(stderr, "error: length must be 1 or more: %s\n", arg_length);
+        exit(1);
+    }
+
+    const uint8_t c = get_uchar(arg_char);
 
     write_to_file(file, NULL, &c, arg_offset, len);
 }
 
+
 static void print_usage(const char *self)
 {
+    const char *p = strrchr(self, PATH_SEPARATOR);
+
+    if (*p && *(p+1) != 0) {
+        self = p + 1;
+    }
+
     printf("usage:\n"
-           "  %s --help\n", self);
-    printf("  %s r[ead] [<offset> <length>] <file>\n", self);
-    printf("  %s w[rite] <offset> <data> <file>\n", self);
-    printf("  %s m[emset] <offset> <length> <char> <file>\n", self);
+           "  %s --help\n"
+           "  %s r[ead] [<offset> <length>] <file>\n"
+           "  %s w[rite] <offset> <data> <file>\n"
+           "  %s m[emset] <offset> <length> <char> <file>\n",
+        self, self, self, self);
 }
+
 
 static void show_help(const char *self)
 {
@@ -371,43 +406,63 @@ static void show_help(const char *self)
            "\n");
 }
 
-static int is_cmd(const char *arg, const char *cmd)
+
+static bool is_cmd(const char *arg, const char *cmd1, const char *cmd2)
 {
-    return ((tolower(*arg) == tolower(*cmd) && arg[1] == 0) ||
-        strcasecmp(arg, cmd) == 0);
+    return (strcasecmp(arg, cmd1) == 0 || strcasecmp(arg, cmd2) == 0);
 }
+
 
 int main(int argc, char **argv)
 {
-    for (int i=0; i < argc; i++) {
-        if (strcmp(argv[i], "--help") == 0) {
-            show_help(argv[0]);
-            return 0;
-        }
+    const char *a_cmd, *a_offset, *a_length, *a_data, *a_char, *a_file;
+
+    if (argc > 1) {
+        a_cmd = argv[1];
     }
 
     switch (argc)
     {
+    case 2:
+        if (strcmp(argv[1], "--help") == 0) {
+            show_help(argv[0]);
+            return 0;
+        }
+        break;
+
     case 3:
-        if (is_cmd(argv[1], "read")) {
-            read_data("0", "all", argv[2]);
+        if (is_cmd(a_cmd, "r", "read")) {
+            a_offset = "0";
+            a_length = "all";
+            a_file = argv[2];
+            read_data(a_offset, a_length, a_file);
             return 0;
         }
         break;
 
     case 5:
-        if (is_cmd(argv[1], "read")) {
-            read_data(argv[2], argv[3], argv[4]);
+        if (is_cmd(a_cmd, "r", "read")) {
+            a_offset = argv[2];
+            a_length = argv[3];
+            a_file = argv[4];
+            read_data(a_offset, a_length, a_file);
             return 0;
-        } else if (is_cmd(argv[1], "write")) {
-            write_data(argv[2], argv[3], argv[4]);
+        } else if (is_cmd(a_cmd, "w", "write")) {
+            a_offset = argv[2];
+            a_data = argv[3];
+            a_file = argv[4];
+            write_data(a_offset, a_data, a_file);
             return 0;
         }
         break;
 
     case 6:
-        if (is_cmd(argv[1], "memset")) {
-            memset_write_data(argv[2], argv[3], argv[4], argv[5]);
+        if (is_cmd(a_cmd, "m", "memset")) {
+            a_offset = argv[2];
+            a_length = argv[3];
+            a_char = argv[4];
+            a_file = argv[5];
+            memset_write_data(a_offset, a_length, a_char, a_file);
             return 0;
         }
         break;
