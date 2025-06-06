@@ -418,60 +418,69 @@ int main(int argc, char **argv)
 {
     const char *a_cmd, *a_offset, *a_length, *a_data, *a_char, *a_file;
 
-    if (argc > 1) {
-        a_cmd = argv[1];
+    if (argc < 2) {
+        print_usage(argv[0]);
+        return 1;
     }
 
-    switch (argc)
-    {
-    case 2:
-        if (strcmp(argv[1], "--help") == 0) {
-            show_help(argv[0]);
-            return 0;
-        }
-        break;
+    a_cmd = argv[1];
 
-    case 3:
-        if (is_cmd(a_cmd, "r", "read")) {
+    /* help */
+    if (strcmp(a_cmd, "--help") == 0) {
+        show_help(argv[0]);
+        return 0;
+    }
+
+    /* read */
+    if (is_cmd(a_cmd, "r", "read")) {
+        if (argc == 3) {
             a_offset = "0";
             a_length = "all";
             a_file = argv[2];
-            read_data(a_offset, a_length, a_file);
-            return 0;
-        }
-        break;
-
-    case 5:
-        if (is_cmd(a_cmd, "r", "read")) {
+        } else if (argc == 5) {
             a_offset = argv[2];
             a_length = argv[3];
             a_file = argv[4];
-            read_data(a_offset, a_length, a_file);
-            return 0;
-        } else if (is_cmd(a_cmd, "w", "write")) {
-            a_offset = argv[2];
-            a_data = argv[3];
-            a_file = argv[4];
-            write_data(a_offset, a_data, a_file);
-            return 0;
+        } else {
+            print_usage(argv[0]);
+            return 1;
         }
-        break;
 
-    case 6:
-        if (is_cmd(a_cmd, "m", "memset")) {
-            a_offset = argv[2];
-            a_length = argv[3];
-            a_char = argv[4];
-            a_file = argv[5];
-            memset_write_data(a_offset, a_length, a_char, a_file);
-            return 0;
-        }
-        break;
-
-    default:
-        break;
+        read_data(a_offset, a_length, a_file);
+        return 0;
     }
 
+    /* write */
+    if (is_cmd(a_cmd, "w", "write")) {
+        if (argc != 5) {
+            print_usage(argv[0]);
+            return 1;
+        }
+
+        a_offset = argv[2];
+        a_data = argv[3];
+        a_file = argv[4];
+        write_data(a_offset, a_data, a_file);
+        return 0;
+    }
+
+    /* memset */
+    if (is_cmd(a_cmd, "m", "memset")) {
+        if (argc != 6) {
+            print_usage(argv[0]);
+            return 1;
+        }
+
+        a_offset = argv[2];
+        a_length = argv[3];
+        a_char = argv[4];
+        a_file = argv[5];
+        memset_write_data(a_offset, a_length, a_char, a_file);
+        return 0;
+    }
+
+    /* error */
+    fprintf(stderr, "error: unknown argument: %s\n", a_cmd);
     print_usage(argv[0]);
 
     return 1;
