@@ -74,7 +74,7 @@ static uint8_t strtouchar(const char *str, int base)
     long l = xstrtol(str, base);
 
     if (l < 0 || l > 255) {
-        fprintf(stderr, "error: argument value outside of 8 bit range: %ld\n", l);
+        fprintf(stderr, "error: argument value outside of 8 bit range: %s (%ld)\n", str, l);
         exit(1);
     }
 
@@ -271,13 +271,14 @@ static uint8_t *hex_to_uchar(const char *arg_data, size_t *num_bytes)
             continue;
         }
 
-        if (buf[3] == 0) {
-            buf[3] = *p; /* save char */
-            *pdata = strtouchar(buf, 16); /* convert to byte */
-            buf[2] = buf[3] = 0; /* reset buffer */
-            *num_bytes += 1;
-            pdata++;
-        }
+        buf[3] = *p;
+        *pdata = strtouchar(buf, 16);
+
+        /* reset buffer */
+        buf[2] = buf[3] = 0;
+
+        *num_bytes += 1;
+        pdata++;
     }
 
     /* trailing single-digit hex number */
