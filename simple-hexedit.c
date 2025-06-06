@@ -373,7 +373,7 @@ static void print_usage(const char *self)
 {
     const char *p = strrchr(self, PATH_SEPARATOR);
 
-    if (*p && *(p+1) != 0) {
+    if (p && *(p+1) != 0) {
         self = p + 1;
     }
 
